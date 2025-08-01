@@ -99,23 +99,23 @@ typedef struct SPICE_ATTR_PACKED SpicePoint {
     int32_t y;
 } spice_point_t;
 
-typedef struct SPICE_ATTR_PACKED SpiceQMask {
+typedef struct SpiceQMask {
     uint8_t flags;
     spice_point_t pos;
     spice_image_t *bitmap;
 } spice_qmask_t;
 
-typedef struct SPICE_ATTR_PACKED SpiceCopy {
+typedef struct SpiceCopy {
     spice_image_t *src_bitmap;
     struct SPICE_ATTR_PACKED {
-        spice_rect_t src_area;
+        spice_rect_t source_area;
         uint16_t rop_descriptor;
         uint8_t scale_mode;
-    } meta;
+    } pixels;
     spice_qmask_t mask;
 } spice_copy_t;
 
-typedef struct SPICE_ATTR_PACKED SpiceMsgDisplayDrawCopy {
+typedef struct SpiceMsgDisplayDrawCopy {
     spice_msg_display_base_t base;
     spice_copy_t data;
 } spice_msg_display_draw_copy_t;
@@ -174,7 +174,7 @@ static bool init_channel(int sd, uint32_t session_id, uint8_t channel_type,
 static void spice_copy_image(const uint8_t *src, uint8_t **srcp,
         spice_image_t **img);
 static void spice_copy_palette(const uint8_t *src, uint8_t **srcp,
-        spice_palette_t **dst, uint64_t *dst_id);
+        spice_bitmap_t *dst);
 static void spice_copy_bitmap(const uint8_t *src, const spice_image_t *img,
         spice_bitmap_t *dst);
 static void write_bmp_header(FILE *fp, unsigned int width, unsigned int height);
@@ -404,8 +404,8 @@ static bool spice_channel_display(int sd, uint32_t session_id)
                 draw.data.src_bitmap->descriptor.height);
     }
 
-    memcpy(&draw.data.meta, src, sizeof(draw.data.meta));
-    src += sizeof(draw.data.meta);
+    memcpy(&draw.data.pixels, src, sizeof(draw.data.pixels));
+    src += sizeof(draw.data.pixels);
 
     int mask_copy_len = sizeof(draw.data.mask.flags) + sizeof(draw.data.mask.pos);
     memcpy(&draw.data.mask, src, mask_copy_len);
@@ -527,8 +527,8 @@ spice_copy_image(const uint8_t *src,
 }
 
 static void
-spice_copy_palette(const uint8_t *src, uint8_t **srcp,
-    spice_palette_t **dst, uint64_t *dst_id) {
+spice_copy_palette(const uint8_t *src, uint8_t **srcp, spice_bitmap_t *dst)
+{
     uint32_t offset = 0;
     
     memcpy(&offset, *srcp, sizeof(offset));
@@ -536,15 +536,15 @@ spice_copy_palette(const uint8_t *src, uint8_t **srcp,
     *srcp += sizeof(offset);
 
     if (offset) {
-        *dst = (spice_palette_t *) src + offset;
-        memcpy(dst_id, *srcp, sizeof(*dst_id));
-        *srcp += sizeof(*dst_id);
+        dst->palette = (spice_palette_t *) src + offset;
+        memcpy(&dst->palette_id, *srcp, sizeof(dst->palette_id));
+        *srcp += sizeof(dst->palette_id);
 
         return;
     }
 
-    *dst = NULL;
-    *dst_id = 0;
+    dst->palette = NULL;
+    dst->palette_id = 0;
 }
 
 static void
@@ -562,7 +562,7 @@ spice_copy_bitmap(const uint8_t *src, const spice_image_t *img,
     memcpy(dst, p, len);
     p += len;
 
-    spice_copy_palette(src, &p, &dst->palette, &dst->palette_id);
+    spice_copy_palette(src, &p, dst);
     dst->data = p;
 }
 
@@ -676,7 +676,7 @@ int main(void)
     uint32_t session_id;
     char keycode_buf[4] = {0};
     bool ctrl_down = false;
-    spice_conn_t spice_connection = {0};
+    __attribute__((unused)) spice_conn_t spice_connection = {0};
     Display *display;
     Window root_window;
     XEvent event;
